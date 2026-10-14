@@ -682,6 +682,9 @@ Object.assign(ICON, {
 const D = (th, en) => ({ th, en });
 Object.assign(UI, {
   /* เมนู */
+  e_old: D('ระบบหลังบ้าน (Apps Script) ยังเป็นเวอร์ชันเก่า — ผู้สอนต้องวาง Code.gs ใหม่ แล้ว Deploy เป็น New version', 'The server (Apps Script) is outdated — the teacher must paste the new Code.gs and deploy a New version'),
+  e_cfg: D('ผู้สอนยังไม่ได้เผยแพร่ตารางเรียน/ใบงานล่าสุด (หลังบ้าน > บันทึกและเผยแพร่)', 'The teacher has not published the latest schedule/assignments yet'),
+  e_code: D('รหัสนี้ไม่อยู่ในรายชื่อผู้เข้าร่วม', 'This code is not on the participant list'),
   m_home: D('หน้าแรก', 'Home'), m_admin: D('หลังบ้าน (ผู้สอน)', 'Admin (teacher)'), m_exam: D('ทำแบบวัด', 'Test'), m_attend: D('เช็คชื่อ', 'Check-in'), m_hw: D('ส่งงาน', 'Homework'), m_media: D('สื่อการเรียน', 'Media'), m_sched: D('ตารางเรียน', 'Schedule'), m_ailog: D('บันทึกการใช้ AI', 'AI Use Log'),
   d_exam: D('ทำแบบวัดการคิดวิเคราะห์ ชุด A', 'Take the Form A thinking test'), d_attend: D('เช็คชื่อเข้าเรียนด้วยรหัสของคุณ', 'Check in to class with your code'), d_hw: D('ส่งใบงาน การบ้าน หรืออัปโหลดไฟล์', 'Hand in worksheets or upload files'),
   d_media: D('คลิป หนังสือ บทความที่ผู้สอนแนะนำ', 'Videos, books and articles from your teacher'), d_sched: D('วัน เวลา และหัวข้อทั้ง ๒๔ ครั้ง', 'Dates, times and topics of all 24 sessions'), d_ailog: D('บันทึกทุกครั้งที่ใช้ AI พร้อมคำรับรอง', 'Log every AI use and sign the pledge'),
@@ -794,6 +797,15 @@ function renderSplash() {
   <div class="loadbar" id="lb"><i></i></div></div></div>${demoMode() ? `<div class="demo"><span class="chip warn">${esc(T('demo'))}</span></div>` : ''}`;
 }
 
+/* ข้อความผิดพลาดจากเซิร์ฟเวอร์ ให้ผู้ใช้รู้สาเหตุจริง */
+function srvErr(res) {
+  const e = res && res.error;
+  if (e === 'unknown_action' || e === 'bad_token' || e === 'locked') return T('e_old');
+  if (e === 'no_config' || e === 'not_found') return T('e_cfg');
+  if (e === 'bad_code') return T('e_code');
+  if (e && e !== 'NET' && e !== 'ERR') return T('netFail') + ' (' + e + ')';
+  return T('netFail');
+}
 /* ---------- shell for hub pages ---------- */
 function navHtml(key) {
   const items = [['splash', 'home'], ...MENU.filter(([k]) => hubOn(k))];
@@ -892,7 +904,7 @@ async function doAttend(sid, btn) {
     const m = modal(`<div style="text-align:center"><svg class="check" viewBox="0 0 100 100" style="width:84px;height:84px"><circle cx="50" cy="50" r="46"/><path d="M30 52l14 14 27-30"/></svg><div class="thx mon" lang="mnw" style="font-size:2.4rem">${esc(CFG.meta.thanks)}</div><h3>${esc(T('at_ok'))}</h3><p>${esc(T('sc_session'))} ${it ? it.n : ''} · ${esc(code)}${res.status === 'l' ? ' · ' + esc(T('at_late')) : ''}${res.at ? ' · ' + esc(res.at) : ''}</p><div class="acts" style="justify-content:center"><button class="btn" data-x="c">OK</button></div></div>`);
     m.addEventListener('click', e => { if (e.target.closest('[data-x]')) { m.close(); renderAttend(); } }); petals(); return;
   }
-  const e = res && res.error, msg = e === 'bad_pass' ? T('at_e_pass') : e === 'closed' ? T('at_e_closed') : e === 'bad_code' ? T('at_e_code') : T('netFail');
+  const e = res && res.error, msg = e === 'bad_pass' ? T('at_e_pass') : e === 'closed' ? T('at_e_closed') : e === 'bad_code' ? T('at_e_code') : srvErr(res);
   toast(msg, true); if (e === 'bad_pass' && $(`[data-pass="${sid}"]`)) { const p = $(`[data-pass="${sid}"]`); p.classList.add('err'); p.select(); }
 }
 
@@ -942,7 +954,7 @@ function openHwForm(hid) {
     } catch (er) { res = { ok: false, error: 'NET' }; }
     if (res && res.ok) { const dn = hwDone(); dn[code + '|' + hid] = { ts: rec.ts }; LS.set('hwDone', dn); LS.del('hwDraft.' + hid); m.close(); toast(T('hw_ok')); petals(); renderHw(); return; }
     x.disabled = false; x.innerHTML = ic('send') + esc(T('hw_send'));
-    toast(res && res.error === 'closed' ? T('hw_closed') : res && res.error === 'big' ? T('hw_big') : T('netFail'), true);
+    toast(res && res.error === 'closed' ? T('hw_closed') : res && res.error === 'big' ? T('hw_big') : srvErr(res), true);
   });
 }
 function localHw(rec) {
@@ -1079,7 +1091,7 @@ async function alSend() {
     try { res = demoMode() ? (() => { const L = LS.get('ailLog', []); L.push(rec); LS.set('ailLog', L); return { ok: true }; })() : await api('ailogSubmit', { rec }, 60000); } catch (e) { res = { ok: false }; }
     b.disabled = false;
     if (res && res.ok) { AL.rid = null; alSave(); const m = modal(`<div style="text-align:center"><div class="thx mon" lang="mnw" style="font-size:2.4rem">${esc(CFG.meta.thanks)}</div><h3>${esc(T('a_sentOk'))}</h3><div class="acts" style="justify-content:center"><button class="btn" data-x="c">OK</button></div></div>`); m.addEventListener('click', e => { if (e.target.closest('[data-x]')) m.close(); }); petals(); }
-    else toast(T('netFail'), true);
+    else toast(srvErr(res), true);
   };
   const risk = aiCalc({ week: AL.f.week, entries: AL.used === 'no' ? [] : AL.entries }).risk;
   if (risk) { const m = modal(`<h3>${esc(T('a_warnTitle'))}</h3><p>${esc(fmt(T('a_warnMsg'), { n: risk }))}</p><div class="acts"><button class="btn sec" data-x="b">${esc(T('a_goFix'))}</button><button class="btn" data-x="g">${esc(T('a_sendAny'))}</button></div>`); m.addEventListener('click', e => { const x = e.target.closest('[data-x]'); if (!x) return; m.close(); if (x.dataset.x === 'g') go2(); }); } else go2();
@@ -1202,7 +1214,7 @@ async function loadAll() {
     const L = LS.get('local', null); pub = merge(DEFAULT_CFG, L ? L.pub : {}); sec = L ? L.sec : await seedSecret(AD.tok); resp = LS.get('resp', []); AD.att = LS.get('attLog', []); AD.hw = LS.get('hwLog', []); AD.ail = LS.get('ailLog', []);
   } else {
     const r = await api('adminData', { token: AD.tok }); if (!r || !r.ok) throw new Error((r && r.error) || 'ERR');
-    AD.needInit = !r.config; pub = merge(DEFAULT_CFG, r.config || {}); if (r.config) pub.rev = r.config.rev ?? r.rev ?? 1;
+    AD.needInit = !r.config; AD.srvOld = !Array.isArray(r.att); pub = merge(DEFAULT_CFG, r.config || {}); if (r.config) pub.rev = r.config.rev ?? r.rev ?? 1;
     sec = r.secret && r.secret.keys ? r.secret : await seedSecret(AD.tok); resp = r.responses || []; AD.att = r.att || []; AD.hw = r.hw || []; AD.ail = r.ail || [];
   }
   ADM = joinCfg(pub, sec); AD.resp = resp; AD.dirty = false;
@@ -1231,7 +1243,7 @@ const TABS = [['results', 'ผลคะแนน'], ['attend', 'เช็คช�
 function renderAdmin() {
   const a = $('#admin'), ls = logos();
   a.innerHTML = `<div class="adm-top"><div class="in">${ls[0] ? `<img src="${ls[ls.length - 1]}" alt="">` : ''}<h1>หลังบ้าน · ${esc((ADM.hub && ADM.hub.program && ADM.hub.program.th) || ADM.meta.title.th)}</h1>
-  <span class="chip ${demoMode() ? 'warn' : ''}">${ic('cloud')}${demoMode() ? 'โหมดทดลอง (ยังไม่เชื่อม Sheet)' : 'เชื่อม Google Sheet แล้ว'}</span>${!demoMode() && !SEED && !ADM.mcq.some(q => q.key != null && q.key !== '') ? '<span class="chip warn">ยังไม่มีเฉลยใน Sheet</span>' : ''}<span class="sp"></span>
+  <span class="chip ${demoMode() ? 'warn' : ''}">${ic('cloud')}${demoMode() ? 'โหมดทดลอง (ยังไม่เชื่อม Sheet)' : 'เชื่อม Google Sheet แล้ว'}</span>${!demoMode() && AD.srvOld ? '<span class="chip warn" title="วาง Code.gs ใหม่ > Run setup > Deploy > Manage deployments > Edit > New version">Apps Script ยังเป็นเวอร์ชันเก่า — เช็คชื่อ/ส่งงาน/บันทึก AI ยังใช้ไม่ได้</span>' : ''}${!demoMode() && !SEED && !ADM.mcq.some(q => q.key != null && q.key !== '') ? '<span class="chip warn">ยังไม่มีเฉลยใน Sheet</span>' : ''}<span class="sp"></span>
   <button class="btn sec sm" data-ad="preview">${ic('eye')}ดูหน้าบ้าน</button><button class="btn ghost sm" data-ad="logout">${ic('logout')}ออก</button></div>
   <div class="tabs" role="tablist">${TABS.map(([k, n]) => `<button role="tab" data-tab="${k}" class="${AD.tab === k ? 'on' : ''}">${n}</button>`).join('')}</div></div>
   <div class="adm" id="admBody"></div>`;
@@ -1517,7 +1529,7 @@ async function adminAction(a) {
   if (a === 'printSum') return printSummary();
   if (a === 'paperTH') return printPaper('th'); if (a === 'paperEN') return printPaper('en');
   if (a === 'apiSave') { LS.set('api', $('#apiIn').value.trim()); toast('บันทึกแล้ว'); try { await loadAll(); } catch (e) { toast('โหลดข้อมูลจาก URL นี้ไม่ได้: ' + e.message, true); } return renderAdmin(); }
-  if (a === 'apiTest') { const o = $('#apiRes'); o.textContent = 'กำลังทดสอบ…'; const url = ($('#apiIn').value.trim() || apiUrl()); if (!url) { o.textContent = 'ยังไม่มี URL'; return; } try { const r = await (await fetch(url + (url.includes('?') ? '&' : '?') + 'action=ping&_=' + Date.now())).json(); o.innerHTML = r && r.ok ? `<span class="tag t-ok">เชื่อมต่อสำเร็จ</span> ${esc(r.name || '')} · ตอบกลับ ${r.responses ?? '?'} รายการ` : '<span class="tag t-no">ตอบกลับผิดรูปแบบ</span>'; } catch (er) { o.innerHTML = '<span class="tag t-no">เชื่อมต่อไม่ได้</span> ตรวจว่า Deploy เป็น “Anyone” และ URL ลงท้าย /exec'; } return; }
+  if (a === 'apiTest') { const o = $('#apiRes'); o.textContent = 'กำลังทดสอบ…'; const url = ($('#apiIn').value.trim() || apiUrl()); if (!url) { o.textContent = 'ยังไม่มี URL'; return; } try { const r = await (await fetch(url + (url.includes('?') ? '&' : '?') + 'action=ping&_=' + Date.now())).json(); o.innerHTML = r && r.ok ? `<span class="tag t-ok">เชื่อมต่อสำเร็จ</span> ${esc(r.name || '')} · ตอบกลับ ${r.responses ?? '?'} รายการ${r.v >= 2 ? ' · Code.gs เวอร์ชันล่าสุด' : ' · <span class="tag t-no">Code.gs เวอร์ชันเก่า — วางโค้ดใหม่แล้ว Deploy New version</span>'}` : '<span class="tag t-no">ตอบกลับผิดรูปแบบ</span>'; } catch (er) { o.innerHTML = '<span class="tag t-no">เชื่อมต่อไม่ได้</span> ตรวจว่า Deploy เป็น “Anyone” และ URL ลงท้าย /exec'; } return; }
   if (a === 'pinSave') { const o = $('#pinOld').value.trim(), n = $('#pinNew').value.trim(); if (o !== AD.tok) return toast('รหัสเดิมไม่ถูกต้อง', true); if (n.length < 4) return toast('รหัสใหม่ต้องมีอย่างน้อย 4 หลัก', true); try { if (demoMode()) LS.set('pin', n); else { const r = await api('setToken', { token: AD.tok, newToken: n }); if (!r || !r.ok) throw 0; } AD.tok = n; toast('เปลี่ยนรหัสแล้ว'); $('#pinOld').value = $('#pinNew').value = ''; } catch (e) { toast('เปลี่ยนรหัสไม่สำเร็จ', true); } return; }
   if (a === 'cfgExport') { const { pub, sec } = splitCfg(ADM); return download('formA-config.json', JSON.stringify({ config: pub, secret: sec }, null, 1), 'application/json'); }
   if (a === 'respExport') return download('formA-responses.json', JSON.stringify(AD.resp, null, 1), 'application/json');
